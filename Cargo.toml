@@ -1,0 +1,15 @@
+[package]
+name = "diary-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.28", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "time", "chrono", "postgres"] }
+uuid = { version = "1.0", features = ["v4"] }
+clap = { version = "4.4", features = ["derive"] }
+anyhow = "1.0"
+dotenv = "0.15"
+rust-ini = "0.19"
+async-trait = "0.1"
