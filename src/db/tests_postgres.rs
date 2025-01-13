@@ -275,4 +275,195 @@ mod tests {
         test_db.cleanup().await?;
         Ok(())
     }
+
+    // Add to your existing tests_postgres.rs, inside the tests module
+
+    #[tokio::test]
+    async fn test_pagination_default_values() -> Result<()> {
+        let (test_db, db) = TestDB::new().await?;
+
+        // Create 15 test entries
+        for i in 0..15 {
+            let pinned = i < 3; // First 3 entries will be pinned
+            let content = if i == 4 || i == 7 {
+                format!("Entry {} search test", i) // Add some entries with search text
+            } else {
+                format!("Entry {}", i)
+            };
+            db.create_entry(content, pinned).await?;
+        }
+
+        // Test with default values (page 1, per_page 10)
+        let pagination = db
+            .read_entries_with_pagination(None, None, None, None, None)
+            .await?;
+
+        assert_eq!(pagination.total, 15);
+        assert_eq!(pagination.entries.len(), 10); // Default per_page
+        assert_eq!(pagination.page, 1);
+        assert_eq!(pagination.per_page, 10);
+        assert_eq!(pagination.total_pages, 2);
+        assert!(pagination.has_next);
+
+        db.close().await;
+        test_db.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pagination_custom_page_size() -> Result<()> {
+        let (test_db, db) = TestDB::new().await?;
+
+        // Create test entries
+        for i in 0..15 {
+            db.create_entry(format!("Entry {}", i), false).await?;
+        }
+
+        // Test with 5 items per page
+        let pagination = db
+            .read_entries_with_pagination(Some(1), Some(5), None, None, None)
+            .await?;
+
+        assert_eq!(pagination.total, 15);
+        assert_eq!(pagination.entries.len(), 5);
+        assert_eq!(pagination.page, 1);
+        assert_eq!(pagination.per_page, 5);
+        assert_eq!(pagination.total_pages, 3);
+        assert!(pagination.has_next);
+
+        db.close().await;
+        test_db.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pagination_with_filters() -> Result<()> {
+        let (test_db, db) = TestDB::new().await?;
+
+        // Create test entries with varying pinned status and content
+        db.create_entry("First pinned".to_string(), true).await?;
+        db.create_entry("Regular entry".to_string(), false).await?;
+        db.create_entry("Second pinned search test".to_string(), true)
+            .await?;
+        db.create_entry("Another search test".to_string(), false)
+            .await?;
+        db.create_entry("Third pinned".to_string(), true).await?;
+
+        // Test with pinned filter
+        let pagination = db
+            .read_entries_with_pagination(None, None, None, Some(true), None)
+            .await?;
+
+        assert_eq!(pagination.total, 3); // Only pinned entries
+        assert_eq!(pagination.entries.len(), 3);
+        assert_eq!(pagination.total_pages, 1);
+        assert!(!pagination.has_next);
+
+        // Test with search filter
+        let pagination = db
+            .read_entries_with_pagination(None, None, None, None, Some("search test".to_string()))
+            .await?;
+
+        assert_eq!(pagination.total, 2); // Only entries with "search test"
+        assert_eq!(pagination.entries.len(), 2);
+        assert_eq!(pagination.total_pages, 1);
+        assert!(!pagination.has_next);
+
+        // Test with combined filters
+        let pagination = db
+            .read_entries_with_pagination(
+                None,
+                None,
+                None,
+                Some(true),
+                Some("search test".to_string()),
+            )
+            .await?;
+
+        assert_eq!(pagination.total, 1); // Only pinned entries with "search test"
+        assert_eq!(pagination.entries.len(), 1);
+        assert_eq!(pagination.total_pages, 1);
+        assert!(!pagination.has_next);
+
+        db.close().await;
+        test_db.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pagination_invalid_params() -> Result<()> {
+        let (test_db, db) = TestDB::new().await?;
+
+        // Create some test entries
+        for i in 0..5 {
+            db.create_entry(format!("Entry {}", i), false).await?;
+        }
+
+        // Test invalid page number
+        let result = db
+            .read_entries_with_pagination(Some(0), None, None, None, None)
+            .await;
+        assert!(result.is_err());
+
+        // Test invalid per_page
+        let result = db
+            .read_entries_with_pagination(None, Some(0), None, None, None)
+            .await;
+        assert!(result.is_err());
+
+        // Test page beyond available data
+        let pagination = db
+            .read_entries_with_pagination(Some(3), Some(2), None, None, None)
+            .await?;
+
+        assert_eq!(pagination.total, 5);
+        assert_eq!(pagination.entries.len(), 1); // Last page with remaining entry
+        assert_eq!(pagination.page, 3);
+        assert_eq!(pagination.total_pages, 3);
+        assert!(!pagination.has_next);
+
+        db.close().await;
+        test_db.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pagination_sorting() -> Result<()> {
+        let (test_db, db) = TestDB::new().await?;
+
+        // Create test entries
+        for i in 0..5 {
+            db.create_entry(format!("Entry {}", i), false).await?;
+        }
+
+        // Test ascending sort
+        let pagination = db
+            .read_entries_with_pagination(None, None, Some(SortOrder::ASC), None, None)
+            .await?;
+
+        assert_eq!(pagination.total, 5);
+        let first_id = pagination.entries[0].id;
+        let second_id = pagination.entries[1].id;
+        assert!(
+            first_id < second_id,
+            "Entries should be sorted in ascending order"
+        );
+
+        // Test descending sort
+        let pagination = db
+            .read_entries_with_pagination(None, None, Some(SortOrder::DESC), None, None)
+            .await?;
+
+        assert_eq!(pagination.total, 5);
+        let first_id = pagination.entries[0].id;
+        let second_id = pagination.entries[1].id;
+        assert!(
+            first_id > second_id,
+            "Entries should be sorted in descending order"
+        );
+
+        db.close().await;
+        test_db.cleanup().await?;
+        Ok(())
+    }
 }

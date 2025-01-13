@@ -7,11 +7,21 @@ use crate::models::Entry;
 use anyhow::Result;
 use async_trait::async_trait;
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize)]
 pub enum SortOrder {
     ASC,
     DESC,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Pagination {
+    entries: Vec<Entry>,
+    has_next: bool,
+    total: i64,
+    page: i64,
+    per_page: i64,
+    total_pages: i64,
 }
 
 #[async_trait]
@@ -27,6 +37,15 @@ pub trait DB {
         pinned: Option<bool>,
         substring: Option<String>,
     ) -> Result<Vec<Entry>>;
+
+    async fn read_entries_with_pagination(
+        &self,
+        page: Option<i64>,
+        per_page: Option<i64>,
+        sort: Option<SortOrder>,
+        pinned: Option<bool>,
+        substring: Option<String>,
+    ) -> Result<Pagination>;
 
     // Rest remains the same
     async fn check_if_entry_exists(&self, id: i64) -> Result<bool>;
@@ -62,6 +81,18 @@ impl DB for SQLiteDiaryDB {
         substring: Option<String>,
     ) -> Result<Vec<Entry>> {
         self.read_entries(page, per_page, sort, pinned, substring)
+            .await
+    }
+
+    async fn read_entries_with_pagination(
+        &self,
+        page: Option<i64>,
+        per_page: Option<i64>,
+        sort: Option<SortOrder>,
+        pinned: Option<bool>,
+        substring: Option<String>,
+    ) -> Result<Pagination> {
+        self.read_entries_with_pagination(page, per_page, sort, pinned, substring)
             .await
     }
 
@@ -108,6 +139,18 @@ impl DB for PostgresDiaryDB {
         substring: Option<String>,
     ) -> Result<Vec<Entry>> {
         self.read_entries(page, per_page, sort, pinned, substring)
+            .await
+    }
+
+    async fn read_entries_with_pagination(
+        &self,
+        page: Option<i64>,
+        per_page: Option<i64>,
+        sort: Option<SortOrder>,
+        pinned: Option<bool>,
+        substring: Option<String>,
+    ) -> Result<Pagination> {
+        self.read_entries_with_pagination(page, per_page, sort, pinned, substring)
             .await
     }
 

@@ -1,10 +1,9 @@
-use std::str::FromStr;
-
-use super::SortOrder;
+use super::{Pagination, SortOrder};
 use crate::models::Entry;
 use anyhow::{Context, Result};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::PgPool;
+use std::str::FromStr;
 
 pub struct PostgresDiaryDB {
     pub pool: PgPool,
@@ -141,30 +140,12 @@ impl PostgresDiaryDB {
         Ok(result)
     }
 
-    pub async fn read_entries(
-        &self,
-        page: Option<i64>,
-        per_page: Option<i64>,
-        sort: Option<SortOrder>,
+    fn build_base_query(
+        selector: &str,
         pinned: Option<bool>,
         substring: Option<String>,
-    ) -> Result<Vec<Entry>> {
-        let page = page.unwrap_or(1);
-        let per_page = per_page.unwrap_or(10);
-
-        if page < 1 || per_page < 1 {
-            return Err(anyhow::anyhow!("Page and per_page must be positive"));
-        }
-        let sort = sort.unwrap_or(SortOrder::DESC);
-
-        let order = match sort {
-            SortOrder::ASC => "ASC",
-            SortOrder::DESC => "DESC",
-        };
-
-        let offset = (page - 1) * per_page;
-
-        let mut query = String::from("SELECT * FROM entries");
+    ) -> (String, i32) {
+        let mut query = format!("SELECT {} FROM entries", selector);
         let mut conditions = Vec::new();
         let mut param_count = 0;
 
@@ -175,7 +156,7 @@ impl PostgresDiaryDB {
 
         if substring.is_some() {
             param_count += 1;
-            conditions.push(format!("content ILIKE ${}", param_count)); // Note: Using ILIKE for case-insensitive search
+            conditions.push(format!("content ILIKE ${}", param_count));
         }
 
         if !conditions.is_empty() {
@@ -183,12 +164,54 @@ impl PostgresDiaryDB {
             query.push_str(&conditions.join(" AND "));
         }
 
-        query.push_str(&format!(
-            " ORDER BY created_at {0}, id {0} LIMIT ${1} OFFSET ${2};",
-            order,
-            param_count + 1,
-            param_count + 2
-        ));
+        (query, param_count)
+    }
+
+    fn build_search_query(
+        selector: &str,
+        page: i64,
+        per_page: i64,
+        sort: Option<SortOrder>,
+        pinned: Option<bool>,
+        substring: Option<String>,
+    ) -> Result<String> {
+        if page < 1 || per_page < 1 {
+            return Err(anyhow::anyhow!("Page and per_page must be positive"));
+        }
+
+        let sort = sort.unwrap_or(SortOrder::DESC);
+        let order = match sort {
+            SortOrder::ASC => "ASC",
+            SortOrder::DESC => "DESC",
+        };
+
+        let (mut query, param_count) = Self::build_base_query(selector, pinned, substring);
+
+        // Only add ORDER BY, LIMIT, OFFSET for data query, not for COUNT
+        if selector != "COUNT(*)" {
+            query.push_str(&format!(
+                " ORDER BY created_at {0}, id {0} LIMIT ${1} OFFSET ${2};",
+                order,
+                param_count + 1,
+                param_count + 2
+            ));
+        }
+
+        Ok(query)
+    }
+
+    pub async fn read_entries(
+        &self,
+        page: Option<i64>,
+        per_page: Option<i64>,
+        sort: Option<SortOrder>,
+        pinned: Option<bool>,
+        substring: Option<String>,
+    ) -> Result<Vec<Entry>> {
+        let page = page.unwrap_or(1);
+        let per_page = per_page.unwrap_or(10);
+        let offset = (page - 1) * per_page;
+        let query = Self::build_search_query("*", page, per_page, sort, pinned, substring.clone())?;
 
         let mut query_builder = sqlx::query_as::<_, Entry>(&query);
 
@@ -206,6 +229,52 @@ impl PostgresDiaryDB {
             .fetch_all(&self.pool)
             .await
             .context("Failed to read entries")
+    }
+
+    pub async fn read_entries_with_pagination(
+        &self,
+        page: Option<i64>,
+        per_page: Option<i64>,
+        sort: Option<SortOrder>,
+        pinned: Option<bool>,
+        substring: Option<String>,
+    ) -> Result<Pagination> {
+        let page = page.unwrap_or(1);
+        let per_page = per_page.unwrap_or(10);
+
+        // First get total count
+        let count_query = Self::build_base_query("COUNT(*)", pinned, substring.clone()).0;
+        let mut count_builder = sqlx::query_scalar(&count_query);
+
+        if let Some(is_pinned) = pinned {
+            count_builder = count_builder.bind(is_pinned);
+        }
+
+        if let Some(substr) = substring.clone() {
+            count_builder = count_builder.bind(format!("%{}%", substr));
+        }
+
+        let total: i64 = count_builder
+            .fetch_one(&self.pool)
+            .await
+            .context("Failed to count number of entries")?;
+
+        // Then get paginated entries
+        let entries = self
+            .read_entries(Some(page), Some(per_page), sort, pinned, substring)
+            .await?;
+
+        let has_next = (page * per_page) < total;
+        let total_pages = (total + per_page - 1) / per_page;
+
+        Ok(Pagination {
+            entries,
+            has_next,
+            total,
+            page,
+            per_page,
+            total_pages,
+        })
     }
 
     pub async fn check_if_entry_exists(&self, id: i64) -> Result<bool> {

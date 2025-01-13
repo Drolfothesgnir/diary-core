@@ -1,4 +1,4 @@
-use super::SortOrder;
+use super::{Pagination, SortOrder};
 use crate::models::Entry;
 use anyhow::{Context, Result};
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
@@ -132,6 +132,26 @@ impl SQLiteDiaryDB {
             .fetch_all(&self.pool)
             .await
             .context("Failed to read entries")
+    }
+
+    pub async fn read_entries_with_pagination(
+        &self,
+        page: Option<i64>,
+        per_page: Option<i64>,
+        sort: Option<SortOrder>,
+        pinned: Option<bool>,
+        substring: Option<String>,
+    ) -> Result<Pagination> {
+        let page = page.unwrap_or(1);
+        let per_page = per_page.unwrap_or(10);
+        Ok(Pagination {
+            entries: vec![],
+            has_next: false,
+            total: 0,
+            page,
+            per_page,
+            total_pages: 0,
+        })
     }
 
     pub async fn check_if_entry_exists(&self, id: i64) -> Result<bool> {

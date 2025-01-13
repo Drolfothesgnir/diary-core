@@ -388,6 +388,8 @@ dependencies = [
  "clap",
  "dotenv",
  "rust-ini",
+ "serde",
+ "serde_json",
  "sqlx",
  "tokio",
  "uuid",

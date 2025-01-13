@@ -1,8 +1,9 @@
 use chrono::{DateTime, Local, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx;
 use std::fmt;
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct Entry {
     pub id: i64,
     pub content: String,
