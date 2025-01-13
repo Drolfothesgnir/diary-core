@@ -138,7 +138,6 @@ impl SQLiteDiaryDB {
         let per_page = per_page.unwrap_or(10);
         let offset = (page - 1) * per_page;
         let query = Self::build_search_query("*", page, per_page, sort, pinned, substring.clone())?;
-        println!("{}", query);
 
         let mut query_builder = sqlx::query_as::<_, Entry>(&query);
 

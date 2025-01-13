@@ -16,12 +16,12 @@ pub enum SortOrder {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Pagination {
-    entries: Vec<Entry>,
-    has_next: bool,
-    total: i64,
-    page: i64,
-    per_page: i64,
-    total_pages: i64,
+    pub entries: Vec<Entry>,
+    pub has_next: bool,
+    pub total: i64,
+    pub page: i64,
+    pub per_page: i64,
+    pub total_pages: i64,
 }
 
 #[async_trait]
