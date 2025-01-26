@@ -466,4 +466,38 @@ mod tests {
         test_db.cleanup().await?;
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_dump_entries() -> Result<()> {
+        let (test_db, db) = TestDB::new().await?;
+
+        // Create sample entries first
+        let entries = create_sample_entries(&db)
+            .await
+            .expect("Failed to create sample entries");
+
+        // Create a temporary file for the dump
+        let temp_dir = tempfile::tempdir()?;
+        let dump_path = temp_dir.path().join("test_dump.txt");
+
+        // Dump entries to the temporary file
+        db.dump_entries(Some(&dump_path)).await?;
+
+        // Read the dumped content
+        let dumped_content = std::fs::read_to_string(&dump_path)?;
+
+        // Verify content - the dump should match the string representation of our entries
+        let expected_content = entries
+            .into_iter()
+            .map(|entry| entry.to_string())
+            .collect::<Vec<String>>()
+            .join("\n\n");
+
+        assert_eq!(dumped_content, expected_content);
+
+        db.close().await;
+        test_db.cleanup().await?;
+
+        Ok(())
+    }
 }

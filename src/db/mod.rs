@@ -8,6 +8,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize)]
 pub enum SortOrder {
@@ -57,6 +58,7 @@ pub trait DB {
         pinned: Option<bool>,
     ) -> Result<Entry>;
     async fn delete_entry(&self, id: i64) -> Result<()>;
+    async fn dump_entries(&self, path: Option<&PathBuf>) -> Result<()>;
     async fn close(&self);
 }
 
@@ -117,6 +119,10 @@ impl DB for SQLiteDiaryDB {
         self.delete_entry(id).await
     }
 
+    async fn dump_entries(&self, path: Option<&PathBuf>) -> Result<()> {
+        self.dump_entries(path).await
+    }
+
     async fn close(&self) {
         self.close().await
     }
@@ -173,6 +179,10 @@ impl DB for PostgresDiaryDB {
 
     async fn delete_entry(&self, id: i64) -> Result<()> {
         self.delete_entry(id).await
+    }
+
+    async fn dump_entries(&self, path: Option<&PathBuf>) -> Result<()> {
+        self.dump_entries(path).await
     }
 
     async fn close(&self) {

@@ -2,6 +2,10 @@ use super::{Pagination, SortOrder};
 use crate::models::Entry;
 use anyhow::{Context, Result};
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+
 pub struct SQLiteDiaryDB {
     pub pool: SqlitePool,
 }
@@ -299,6 +303,33 @@ impl SQLiteDiaryDB {
             .await
             .context(format!("Failed to delete entry with id: {}", id))?;
         println!("Entry with id: {} deleted.", id);
+
+        Ok(())
+    }
+
+    pub async fn dump_entries(&self, path: Option<&PathBuf>) -> Result<()> {
+        let qry = "SELECT * FROM entries;";
+        let entries = sqlx::query_as::<_, Entry>(&qry)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let dump_string = entries
+            .into_iter()
+            .map(|entry| entry.to_string())
+            .collect::<Vec<String>>()
+            .join("\n\n");
+
+        let dump_path = match path {
+            Some(p) => p,
+            None => &std::env::current_exe()?
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Failed to get parent directory"))?
+                .join("dump.txt"),
+        };
+
+        let mut dump_file = File::options().write(true).create(true).open(&dump_path)?;
+
+        dump_file.write_all(&dump_string.as_bytes())?;
 
         Ok(())
     }
